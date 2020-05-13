@@ -23,10 +23,13 @@ pub fn write_file(
     let mut output_file =
         BufWriter::with_capacity(4 * 1024 * 1024, File::create(output_filename).unwrap());
 
+    let mut line = String::with_capacity(10 * 6 * walks_per_line as usize);
+
     for dog in mapping.dogs() {
         for _ in 0..lines_per_dog {
             let mut rng = rand::thread_rng();
-            let line = get_line(walks_per_line, &dog, &mapping, &mut rng);
+            line.clear();
+            get_line(walks_per_line, &dog, &mapping, &mut rng, &mut line);
             output_file.write_all(line.as_bytes()).unwrap();
         }
     }
