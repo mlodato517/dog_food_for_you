@@ -26,7 +26,7 @@ pub fn write_file(
     for dog in mapping.dogs() {
         for _ in 0..lines_per_dog {
             let mut rng = rand::thread_rng();
-            let line = get_line(walks_per_line, &dog, &mapping, &mut rng);
+            let line = get_line(walks_per_line, dog, &mapping, &mut rng);
             output_file.write_all(line.as_bytes()).unwrap();
         }
     }
