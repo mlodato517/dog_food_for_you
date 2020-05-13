@@ -1,5 +1,6 @@
 [package]
 name = "dog_food_for_you"
+default-run = "dog_food_for_you"
 version = "0.1.0"
 authors = ["Mark Lodato <mark@thegnar.co>"]
 edition = "2018"

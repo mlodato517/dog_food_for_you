@@ -23,3 +23,18 @@ For options, use the `--help` flag:
 ```sh
 cargo run --bin generate_source_data -- --help
 ```
+
+### Generating the Output
+
+Before deriving an output file, ensure you've [generated source data](#generating-data).
+To run the algorithm that generates the output, run the main binary:
+
+```sh
+cargo run --release
+```
+
+Again, help can be found via the `--help` flag:
+
+```sh
+cargo run -- --help
+```
