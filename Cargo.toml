@@ -9,6 +9,7 @@ edition = "2018"
 
 [dependencies]
 rand = "0.7.3"
+rand_xoshiro = "0.4.0"
 structopt = "0.3.14"
 
 [profile.release]

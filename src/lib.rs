@@ -3,6 +3,8 @@ mod mapping;
 
 use get_line::get_line;
 use mapping::Mapping;
+use rand_xoshiro::rand_core::SeedableRng;
+use rand_xoshiro::Xoshiro256PlusPlus;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
 
@@ -25,7 +27,7 @@ pub fn write_file(
 
     for dog in mapping.dogs() {
         for _ in 0..lines_per_dog {
-            let mut rng = rand::thread_rng();
+            let mut rng = Xoshiro256PlusPlus::from_rng(rand::thread_rng()).unwrap();
             let line = get_line(walks_per_line, dog, &mapping, &mut rng);
             output_file.write_all(line.as_bytes()).unwrap();
         }
