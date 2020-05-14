@@ -5,6 +5,7 @@ use get_line::get_line;
 use mapping::Mapping;
 use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, Write};
 
@@ -30,10 +31,10 @@ pub fn write_file(
 
     let line_length = ID_AND_WHITESPACE_LENGTH
         + ID_AND_WHITESPACE_LENGTH * STEPS_PER_WALK * walks_per_line as usize;
-    let mut lines = vec![b' '; line_length * lines_per_dog as usize];
 
+    let mut lines = vec![b' '; line_length * lines_per_dog as usize];
     for dog in mapping.dogs() {
-        lines.chunks_mut(line_length).for_each(|mut line| {
+        lines.par_chunks_mut(line_length).for_each(|mut line| {
             let mut rng = Xoshiro256PlusPlus::from_rng(rand::thread_rng()).unwrap();
             get_line(walks_per_line, dog, &mapping, &mut rng, &mut line);
         });
