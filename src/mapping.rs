@@ -1,21 +1,20 @@
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::io::BufRead;
+use std::str;
 
 type Lines = Vec<Vec<String>>;
 type Map = Vec<Vec<u16>>;
 
 pub struct Mapping {
+    base64_cache: Vec<[u8; 3]>,
     dog_food_map: Map,
     food_ingredient_map: Map,
     ingredient_flavor_map: Map,
     flavor_ingredient_map: Map,
     ingredient_food_map: Map,
     food_dog_map: Map,
-    dog_ids: Vec<String>,
-    food_ids: Vec<String>,
-    ingredient_ids: Vec<String>,
-    flavor_ids: Vec<String>,
 }
 
 impl Mapping {
@@ -33,32 +32,32 @@ impl Mapping {
             ingredient_food_map,
             ingredient_flavor_map,
             flavor_ingredient_map,
-            dog_ids,
-            food_ids,
-            ingredient_ids,
-            flavor_ids,
         ) = Self::maps_from_lines(
             dog_food_lines,
             food_ingredient_lines,
             ingredient_flavor_lines,
         );
 
+        let base64_cache = Self::build_base64_cache(
+            &dog_food_map,
+            &food_ingredient_map,
+            &ingredient_flavor_map,
+            &flavor_ingredient_map,
+        );
+
         Mapping {
+            base64_cache,
             dog_food_map,
             food_dog_map,
             food_ingredient_map,
             ingredient_food_map,
             ingredient_flavor_map,
             flavor_ingredient_map,
-            dog_ids,
-            food_ids,
-            ingredient_ids,
-            flavor_ids,
         }
     }
 
     pub fn dogs(&self) -> impl Iterator<Item = u16> {
-        (0..self.dog_ids.len()).map(|n| n as u16)
+        (0..self.dog_food_map.len()).map(|n| n as u16)
     }
 
     pub fn food_liked_by_dog<R: Rng>(&self, dog: u16, rng: &mut R) -> u16 {
@@ -91,20 +90,8 @@ impl Mapping {
         dog_list[rng.gen_range(0, dog_list.len())]
     }
 
-    pub fn dog_id(&self, dog: u16) -> &str {
-        &self.dog_ids[dog as usize]
-    }
-
-    pub fn food_id(&self, food: u16) -> &str {
-        &self.food_ids[food as usize]
-    }
-
-    pub fn ingredient_id(&self, ingredient: u16) -> &str {
-        &self.ingredient_ids[ingredient as usize]
-    }
-
-    pub fn flavor_id(&self, flavor: u16) -> &str {
-        &self.flavor_ids[flavor as usize]
+    pub fn id(&self, id: u16) -> [u8; 3] {
+        self.base64_cache[id as usize]
     }
 
     fn get_lines<R: BufRead>(file: R) -> Lines {
@@ -166,35 +153,16 @@ impl Mapping {
         dog_food_lines: Lines,
         food_ingredient_lines: Lines,
         ingredient_flavor_lines: Lines,
-    ) -> (
-        Map,
-        Map,
-        Map,
-        Map,
-        Map,
-        Map,
-        Vec<String>,
-        Vec<String>,
-        Vec<String>,
-        Vec<String>,
-    ) {
+    ) -> (Map, Map, Map, Map, Map, Map) {
         // Dogs <-> Food maps
         let mut dog_map = HashMap::new();
-        let mut dog_ids = Vec::new();
         let mut food_map = HashMap::new();
-        let mut food_ids = Vec::new();
         for ids in &dog_food_lines {
             let new_idx = dog_map.len();
-            dog_map.entry(ids[0].to_owned()).or_insert_with(|| {
-                dog_ids.push(ids[0].to_owned());
-                new_idx
-            });
+            dog_map.entry(ids[0].to_owned()).or_insert(new_idx);
 
             let new_idx = food_map.len();
-            food_map.entry(ids[1].to_owned()).or_insert_with(|| {
-                food_ids.push(ids[1].to_owned());
-                new_idx
-            });
+            food_map.entry(ids[1].to_owned()).or_insert(new_idx);
         }
 
         let mut dog_food_map = vec![Vec::new(); dog_map.len()];
@@ -208,13 +176,9 @@ impl Mapping {
 
         // Food <-> Ingredients map
         let mut ingredient_map = HashMap::new();
-        let mut ingredient_ids = Vec::new();
         for ids in &food_ingredient_lines {
             let new_idx = ingredient_map.len();
-            ingredient_map.entry(ids[1].to_owned()).or_insert_with(|| {
-                ingredient_ids.push(ids[1].to_owned());
-                new_idx
-            });
+            ingredient_map.entry(ids[1].to_owned()).or_insert(new_idx);
         }
 
         let mut food_ingredient_map = vec![Vec::new(); food_map.len()];
@@ -228,13 +192,9 @@ impl Mapping {
 
         // Ingredient <-> Flavors map
         let mut flavor_map = HashMap::new();
-        let mut flavor_ids = Vec::new();
         for ids in &ingredient_flavor_lines {
             let new_idx = flavor_map.len();
-            flavor_map.entry(ids[1].to_owned()).or_insert_with(|| {
-                flavor_ids.push(ids[1].to_owned());
-                new_idx
-            });
+            flavor_map.entry(ids[1].to_owned()).or_insert(new_idx);
         }
 
         let mut ingredient_flavor_map = vec![Vec::new(); ingredient_map.len()];
@@ -246,6 +206,9 @@ impl Mapping {
             flavor_ingredient_map[flavor_entry].push(ingredient_entry as u16);
         }
 
+        // Write off original ID <-> base64 ID mappings for future consumption!
+        Self::write_base64_mappings(&dog_map, &food_map, &ingredient_map, &flavor_map);
+
         (
             dog_food_map,
             food_dog_map,
@@ -253,11 +216,61 @@ impl Mapping {
             ingredient_food_map,
             ingredient_flavor_map,
             flavor_ingredient_map,
-            dog_ids,
-            food_ids,
-            ingredient_ids,
-            flavor_ids,
         )
+    }
+
+    fn build_base64_cache(
+        dog_food_map: &Map,
+        food_ingredient_map: &Map,
+        ingredient_flavor_map: &Map,
+        flavor_ingredient_map: &Map,
+    ) -> Vec<[u8; 3]> {
+        let longest_len = [
+            dog_food_map.len(),
+            food_ingredient_map.len(),
+            ingredient_flavor_map.len(),
+            flavor_ingredient_map.len(),
+        ]
+        .iter()
+        .copied()
+        .max()
+        .unwrap();
+
+        (0..longest_len)
+            .map(|n| Self::base64_encode(n as u16))
+            .collect()
+    }
+
+    fn base64_encode(idx: u16) -> [u8; 3] {
+        let mut buf = [0, 0, 0];
+        base64::encode_config_slice(idx.to_ne_bytes(), base64::STANDARD_NO_PAD, &mut buf);
+        buf
+    }
+
+    fn write_base64_mappings(
+        dog_map: &HashMap<String, usize>,
+        food_map: &HashMap<String, usize>,
+        ingredient_map: &HashMap<String, usize>,
+        flavor_map: &HashMap<String, usize>,
+    ) {
+        [
+            ("dog_mapping.csv", dog_map),
+            ("food_mapping.csv", food_map),
+            ("ingredient_mapping.csv", ingredient_map),
+            ("flavor_mapping.csv", flavor_map),
+        ]
+        .iter()
+        .for_each(|(filename, map)| {
+            let lines: Vec<String> = map
+                .iter()
+                .map(|(string_id, usize_id)| {
+                    let base64_value = Self::base64_encode(*usize_id as u16);
+                    let written_base64_id = str::from_utf8(&base64_value).unwrap();
+                    format!("{},{}", string_id, written_base64_id)
+                })
+                .collect();
+            fs::write(filename, lines.join("\n")).unwrap();
+        });
     }
 }
 
